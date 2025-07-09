@@ -1,0 +1,10 @@
+/* src/index.css or src/main.css */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Add this for the truly global, foundational background */
+body {
+  @apply bg-gray-900 text-white; /* Sets dark background and default text color */
+}
