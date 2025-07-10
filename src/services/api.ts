@@ -9,15 +9,16 @@ export interface SensorData {
   timestamp: string;
 }
 
+// --- MODIFIED INTERFACE to allow status: null ---
 export interface ActuatorStatusData {
   device: string;
-  status: string;
-  timestamp: string;
+  status: 'on' | 'off' | 'unknown' | null; // Allow null for status
+  time: string | null;
 }
 
 export interface ActuatorControlRequest {
   device: string;
-  action: string;
+  action: 'on' | 'off';
 }
 
 class ApiService {
@@ -38,6 +39,9 @@ class ApiService {
       return response;
     } catch (error) {
       clearTimeout(timeoutId);
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('Request timed out');
+      }
       throw error;
     }
   }
@@ -66,9 +70,11 @@ class ApiService {
 
   async controlActuator(request: ActuatorControlRequest): Promise<boolean> {
     try {
+      const formattedDevice = request.device.charAt(0).toUpperCase() + request.device.slice(1);
+
       const response = await this.fetchWithTimeout(`${BASE_URL}/api/actuators/control`, {
         method: 'POST',
-        body: JSON.stringify(request),
+        body: JSON.stringify({ device: formattedDevice, action: request.action }),
       });
       return response.ok;
     } catch (error) {
@@ -79,9 +85,26 @@ class ApiService {
 
   async getActuatorStatus(device: string): Promise<ActuatorStatusData | null> {
     try {
-      const response = await this.fetchWithTimeout(`${BASE_URL}/api/actuators/status?device=${device}`);
-      if (!response.ok) throw new Error('Failed to fetch actuator status');
-      return await response.json();
+      const formattedDevice = device.charAt(0).toUpperCase() + device.slice(1);
+      
+      const response = await this.fetchWithTimeout(`${BASE_URL}/api/actuators/status?device=${formattedDevice}`);
+      if (!response.ok) {
+        console.error(`Failed to fetch actuator status for ${device}. Status: ${response.status} ${response.statusText}`);
+        const errorBody = await response.text().catch(() => 'No response body');
+        console.error('Error response body:', errorBody);
+        throw new Error('Failed to fetch actuator status');
+      }
+      
+      const data: ActuatorStatusData = await response.json();
+
+      
+      if (data && typeof data.device === 'string' && (typeof data.status === 'string' || data.status === null)) {
+        return data;
+      }
+      
+      console.warn(`Malformed status response for ${device}:`, data);
+      return null;
+      
     } catch (error) {
       console.error('Error fetching actuator status:', error);
       return null;
