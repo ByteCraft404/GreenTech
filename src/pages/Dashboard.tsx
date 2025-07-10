@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Navigate } from 'react-router-dom';
 import { Thermometer, Droplets, Sun, Leaf, Fan, Zap, Waves, Activity, AlertTriangle } from 'lucide-react';
@@ -14,44 +14,73 @@ export const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [secondsAgo, setSecondsAgo] = useState(0);
+  const [isOnline, setIsOnline] = useState(navigator.onLine); // Initial network status
+  const [isDataCollectionActive, setIsDataCollectionActive] = useState(false); // Initial data collection status
 
   // Redirect if no greenhouse selected
   if (!selectedGreenhouse) {
     return <Navigate to="/" replace />;
   }
 
-  const fetchSensorData = async () => {
+  const fetchSensorData = useCallback(async () => {
+    setIsLoading(true); // Set loading true at the start of fetch
     try {
       const data = await apiService.getLatestSensorData();
       setSensorData(data);
       if (data) {
-        setLastUpdated(new Date(data.timestamp).toLocaleTimeString());
-        setSecondsAgo(0);
+        // --- THIS IS THE CRUCIAL CHANGE ---
+        // Append 'Z' to tell JavaScript the timestamp is in UTC
+        setLastUpdated(new Date(data.timestamp + 'Z').toLocaleTimeString());
+        // --- END OF CRUCIAL CHANGE ---
+        setSecondsAgo(0); // Reset seconds ago on successful data fetch
+        setIsDataCollectionActive(true); // Data was received, so active
+      } else {
+        setIsDataCollectionActive(false); // No data received
       }
     } catch (error) {
       console.error('Error fetching sensor data:', error);
+      setIsDataCollectionActive(false); // Error fetching means inactive data collection
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Always set loading false at the end
     }
-  };
+  }, []); // No dependencies for this useCallback, as it only uses apiService which is stable
 
   useEffect(() => {
     fetchSensorData();
     const interval = setInterval(fetchSensorData, 15000); // Refresh every 15 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchSensorData]); // Add fetchSensorData as dependency
 
   // Update seconds ago counter
   useEffect(() => {
-    if (lastUpdated) {
+    if (isDataCollectionActive) { // Only update if data collection is active
       const interval = setInterval(() => {
         setSecondsAgo(prev => prev + 1);
       }, 1000);
       return () => clearInterval(interval);
+    } else {
+      setSecondsAgo(0); // Reset if data collection becomes inactive
     }
-  }, [lastUpdated]);
+  }, [isDataCollectionActive]);
+
+  // Network status listener
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const getLastUpdatedText = () => {
+    if (!isDataCollectionActive) {
+      return 'No data available';
+    }
     if (secondsAgo < 60) {
       return `${secondsAgo} seconds ago`;
     } else if (secondsAgo < 3600) {
@@ -78,7 +107,8 @@ export const Dashboard: React.FC = () => {
                 {selectedFarm?.name} • {selectedGreenhouse?.name}
               </span>
             </div>
-            {lastUpdated && (
+            {/* Display last updated only if data collection is active */}
+            {isDataCollectionActive && (
               <div className="text-gray-500 text-sm font-mono">
                 Last updated: {getLastUpdatedText()}
               </div>
@@ -97,18 +127,22 @@ export const Dashboard: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-white">System Status</h2>
           <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse" />
-            <span className="text-green-400 font-mono text-sm">OPERATIONAL</span>
+            {/* Dynamic System Status */}
+            <div className={`w-3 h-3 ${isOnline && isDataCollectionActive ? 'bg-green-400 animate-pulse' : 'bg-red-500'} rounded-full`} />
+            <span className={`font-mono text-sm ${isOnline && isDataCollectionActive ? 'text-green-400' : 'text-red-500'}`}>
+              {isOnline && isDataCollectionActive ? 'OPERATIONAL' : 'OFFLINE'}
+            </span>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Data Collection Status */}
           <div className="bg-gray-700/30 rounded-lg p-4">
             <div className="flex items-center space-x-2 mb-2">
-              <Activity className="text-blue-400" size={16} />
+              <Activity className={`${isDataCollectionActive ? 'text-blue-400' : 'text-red-400'}`} size={16} />
               <span className="text-gray-300 text-sm">Data Collection</span>
             </div>
-            <p className="text-blue-400 font-mono text-lg">
-              {sensorData ? 'Active' : 'Inactive'}
+            <p className={`${isDataCollectionActive ? 'text-blue-400' : 'text-red-400'} font-mono text-lg`}>
+              {isDataCollectionActive ? 'Active' : 'Inactive'}
             </p>
           </div>
           <div className="bg-gray-700/30 rounded-lg p-4">
@@ -116,14 +150,17 @@ export const Dashboard: React.FC = () => {
               <Zap className="text-green-400" size={16} />
               <span className="text-gray-300 text-sm">Power Status</span>
             </div>
-            <p className="text-green-400 font-mono text-lg">Normal</p>
+            <p className="text-green-400 font-mono text-lg">Normal</p> {/* This remains static for now */}
           </div>
+          {/* Network Status */}
           <div className="bg-gray-700/30 rounded-lg p-4">
             <div className="flex items-center space-x-2 mb-2">
-              <Waves className="text-purple-400" size={16} />
+              <Waves className={`${isOnline ? 'text-purple-400' : 'text-red-400'}`} size={16} />
               <span className="text-gray-300 text-sm">Network</span>
             </div>
-            <p className="text-purple-400 font-mono text-lg">Connected</p>
+            <p className={`${isOnline ? 'text-purple-400' : 'text-red-400'} font-mono text-lg`}>
+              {isOnline ? 'Connected' : 'Disconnected'}
+            </p>
           </div>
           <div className="bg-gray-700/30 rounded-lg p-4">
             <div className="flex items-center space-x-2 mb-2">
@@ -150,7 +187,7 @@ export const Dashboard: React.FC = () => {
             icon="temperature"
             color="red"
             isLoading={isLoading}
-            lastUpdated={lastUpdated}
+            lastUpdated={lastUpdated} // `lastUpdated` is now only set on successful data
             threshold={{ min: 18, max: 30 }}
           />
           <SensorCard

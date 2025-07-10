@@ -87,22 +87,26 @@ export const SensorHistory: React.FC = () => {
 
     const processedData = allRawSensorData // Start with all raw data
       .filter(item => {
-          const itemTimestamp = new Date(item.timestamp).getTime(); // Convert item timestamp to milliseconds
-          const isValidDate = !isNaN(itemTimestamp); // Check if the timestamp is valid
-          const inTimeRange = isValidDate && itemTimestamp >= minTimestamp;
+        // --- THIS IS THE CRUCIAL CHANGE for parsing item.timestamp as UTC ---
+        const itemTimestamp = new Date(item.timestamp + 'Z').getTime(); // Convert item timestamp to milliseconds, treating it as UTC
+        // --- END OF CRUCIAL CHANGE ---
+        const isValidDate = !isNaN(itemTimestamp); // Check if the timestamp is valid
+        const inTimeRange = isValidDate && itemTimestamp >= minTimestamp;
 
-          if (!isValidDate) {
-              console.warn('⚠️ Invalid timestamp found, excluding:', item.timestamp);
-          } else if (!inTimeRange) {
-              console.log(`🕒 Excluding data point at ${new Date(itemTimestamp).toLocaleString()} because it's older than '${timeRange}' filter.`);
-          }
-          return inTimeRange;
+        if (!isValidDate) {
+            console.warn('⚠️ Invalid timestamp found, excluding:', item.timestamp);
+        } else if (!inTimeRange) {
+            console.log(`🕒 Excluding data point at ${new Date(itemTimestamp).toLocaleString()} because it's older than '${timeRange}' filter.`);
+        }
+        return inTimeRange;
       })
       .map(item => ({
         ...item,
-        timeValue: new Date(item.timestamp).getTime(), // Numeric timestamp for sorting
-        time: new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), // String for X-axis label
-        date: new Date(item.timestamp).toLocaleDateString() // For displaying date on tooltip
+        // --- ALSO APPLY THE 'Z' HERE for consistent parsing when creating Date objects ---
+        timeValue: new Date(item.timestamp + 'Z').getTime(), // Numeric timestamp for sorting
+        time: new Date(item.timestamp + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), // String for X-axis label
+        date: new Date(item.timestamp + 'Z').toLocaleDateString() // For displaying date on tooltip
+        // --- END OF 'Z' APPLICATION ---
       }))
       // Sort data by timestamp to ensure correct line drawing on the chart
       .sort((a, b) => a.timeValue - b.timeValue);
@@ -155,7 +159,7 @@ export const SensorHistory: React.FC = () => {
     const csvContent = "data:text/csv;charset=utf-8,"
       + "Timestamp,Temperature,Humidity,Soil Moisture,Light Intensity\n"
       + allRawSensorData.map(row =>
-        `${row.timestamp},${row.temperature},${row.humidity},${row.soilMoisture},${row.lightIntensity}`
+          `${row.timestamp},${row.temperature},${row.humidity},${row.soilMoisture},${row.lightIntensity}`
       ).join("\n");
 
     const encodedUri = encodeURI(csvContent);
@@ -362,9 +366,9 @@ export const SensorHistory: React.FC = () => {
                           const item = chartData[index];
                           // Show date only for the first point or if the date changes
                           if (item && item.date && chartData.length > 1) {
-                             if (index === 0 || item.date !== chartData[index - 1].date) {
-                                return `${item.date}\n${value}`; // Date on a new line
-                             }
+                            if (index === 0 || item.date !== chartData[index - 1].date) {
+                               return `${item.date}\n${value}`; // Date on a new line
+                            }
                           }
                           return value;
                         }}
@@ -413,9 +417,9 @@ export const SensorHistory: React.FC = () => {
                         tickFormatter={(value, index) => {
                           const item = chartData[index];
                           if (item && item.date && chartData.length > 1) {
-                             if (index === 0 || item.date !== chartData[index - 1].date) {
-                                return `${item.date}\n${value}`;
-                             }
+                            if (index === 0 || item.date !== chartData[index - 1].date) {
+                               return `${item.date}\n${value}`;
+                            }
                           }
                           return value;
                         }}
@@ -506,7 +510,7 @@ export const SensorHistory: React.FC = () => {
                     <div className="flex justify-between">
                       <span className="text-xs text-gray-400">Max:</span>
                       <span className="text-sm font-mono text-red-400">
-                        {!isNaN(max) ? max.toFixed(1) : 'N/A'} 
+                        {!isNaN(max) ? max.toFixed(1) : 'N/A'}
                       </span>
                     </div>
                   </div>
