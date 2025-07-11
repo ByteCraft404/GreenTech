@@ -10,6 +10,44 @@ interface DeviceControlCardProps {
   color: string;
 }
 
+// Helper function to safely parse dates, especially from Spring Boot's LocalDateTime
+const parseBackendDate = (dateInput: string | number[] | null): Date | null => {
+  if (!dateInput) {
+    return null;
+  }
+
+  // If it's already an ISO string (like "2025-07-11T22:13:36.123")
+  if (typeof dateInput === 'string') {
+    try {
+      const date = new Date(dateInput);
+      // Check if the date is valid after parsing
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+    } catch (e) {
+      console.warn("Failed to parse ISO string date:", dateInput, e);
+    }
+  } 
+  // If it's an array of numbers (e.g., [2025, 7, 11, 22, 13, 36, 123456789])
+  else if (Array.isArray(dateInput) && dateInput.every(num => typeof num === 'number')) {
+    // Note: Month in Date constructor is 0-indexed (January is 0, December is 11)
+    // LocalDateTime array usually gives 1-indexed month.
+    // Also, nanoseconds (last element) might need to be converted to milliseconds.
+    const [year, month, day, hour, minute, second, nano] = dateInput;
+    try {
+      const milliseconds = nano ? Math.floor(nano / 1_000_000) : 0; // Convert nanoseconds to milliseconds
+      const date = new Date(year, month - 1, day, hour, minute, second, milliseconds);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+    } catch (e) {
+      console.warn("Failed to parse number array date:", dateInput, e);
+    }
+  }
+  
+  return null;
+};
+
 const formatTimeAgo = (isoString: string): string => {
   const date = new Date(isoString);
   const now = new Date();
@@ -47,7 +85,6 @@ export const DeviceControlCard: React.FC<DeviceControlCardProps> = ({
       const callTimestamp = new Date();
       const statusResponse = await apiService.getActuatorStatus(device);
 
-      // --- IMPORTANT CHANGE: Handle `statusResponse.status` being null or 'unknown' ---
       if (statusResponse) {
         if (statusResponse.status === 'on') {
           setIsOn(true);
@@ -55,18 +92,17 @@ export const DeviceControlCard: React.FC<DeviceControlCardProps> = ({
           setIsOn(false);
         } else {
           // If status is 'unknown' or null, treat it as off for interaction purposes
-          // The UI will show "OFF" but the button will be "Turn ON" and clickable.
           setIsOn(false); 
         }
 
-        // --- Use statusResponse.time from backend ---
-        if (statusResponse.time) {
-          setLastUpdated(new Date(statusResponse.time).toISOString());
+        // Use the new parseBackendDate helper for 'time'
+        const parsedTime = parseBackendDate(statusResponse.time);
+        if (parsedTime) {
+          setLastUpdated(parsedTime.toISOString());
         } else {
           setLastUpdated(callTimestamp.toISOString()); // Fallback to client timestamp
         }
       } else {
-        // This path is taken if apiService.getActuatorStatus returns null (e.g., network error, or malformed data)
         console.warn(`Invalid or null status response for ${device}. Setting to disconnected.`);
         setIsOn(null); // Set to null on invalid or missing status
         setLastUpdated(''); // Clear last updated if status is unknown
@@ -91,23 +127,25 @@ export const DeviceControlCard: React.FC<DeviceControlCardProps> = ({
     }
 
     setIsLoading(true);
-    const action = isOn ? 'off' : 'on';
+    // Variable renamed to newStatus for clarity
+    const newStatus = isOn ? 'off' : 'on'; 
 
     try {
-      const success = await apiService.controlActuator({ device, action });
+      // Pass 'status' to the controlActuator method, matching the updated api.ts interface
+      const success = await apiService.controlActuator({ device, status: newStatus });
       if (success) {
         setIsOn(!isOn);
         setLastUpdated(new Date().toISOString());
-        setTimeout(fetchStatus, 1000);
+        setTimeout(fetchStatus, 1000); // Re-fetch status quickly to confirm actual state
       } else {
         console.error(`API reported failure to control ${name}. Reverting optimistic update.`);
-        setIsOn(isOn);
-        fetchStatus();
+        setIsOn(isOn); // Revert optimistic update
+        fetchStatus(); // Re-fetch status to get actual state
       }
     } catch (error) {
       console.error(`Error controlling device ${name}:`, error);
-      setIsOn(isOn);
-      fetchStatus();
+      setIsOn(isOn); // Revert optimistic update
+      fetchStatus(); // Re-fetch status to get actual state
     } finally {
       setTimeout(() => setIsLoading(false), 500);
     }
@@ -185,16 +223,17 @@ export const DeviceControlCard: React.FC<DeviceControlCardProps> = ({
             }`}>
               {isDisconnected ? 'N/A' : (isOn ? 'ON' : 'OFF')}
             </div>
-            {lastUpdated && !isDisconnected && (
+            {lastUpdated && !isDisconnected ? (
               <div className="flex items-center space-x-1 text-xs text-gray-500">
                 <Activity size={12} />
                 <span>{formatTimeAgo(lastUpdated)}</span>
               </div>
-            )}
-            {(!lastUpdated && !isDisconnected) && (
-              <div className="text-xs text-gray-500">
-                No recent data
-              </div>
+            ) : (
+              !isDisconnected && ( // Only show "No recent data" if not disconnected entirely
+                <div className="text-xs text-gray-500">
+                  No recent data
+                </div>
+              )
             )}
           </div>
         </div>
@@ -253,5 +292,4 @@ export const DeviceControlCard: React.FC<DeviceControlCardProps> = ({
       </div>
     </motion.div>
   );
-  
 };

@@ -9,16 +9,18 @@ export interface SensorData {
   timestamp: string;
 }
 
-// --- MODIFIED INTERFACE to allow status: null ---
 export interface ActuatorStatusData {
   device: string;
-  status: 'on' | 'off' | 'unknown' | null; // Allow null for status
-  time: string | null;
+  status: 'on' | 'off' | 'unknown' | null;
+  time: string | number[] | null; // Allows string (ISO) or number array (LocalDateTime)
 }
 
+// This interface now matches what the Spring Boot backend expects
+// for the @RequestBody in the control endpoint.
 export interface ActuatorControlRequest {
   device: string;
-  action: 'on' | 'off';
+  // Renamed from 'action' to 'status' to align with the backend's DTO
+  status: 'on' | 'off';
 }
 
 class ApiService {
@@ -68,13 +70,16 @@ class ApiService {
     }
   }
 
+  // The 'request' parameter now uses the updated ActuatorControlRequest interface
   async controlActuator(request: ActuatorControlRequest): Promise<boolean> {
     try {
+      // Ensure 'device' is capitalized as per backend expectation (e.g., "Fan", "Pump", "Light")
       const formattedDevice = request.device.charAt(0).toUpperCase() + request.device.slice(1);
 
       const response = await this.fetchWithTimeout(`${BASE_URL}/api/actuators/control`, {
         method: 'POST',
-        body: JSON.stringify({ device: formattedDevice, action: request.action }),
+        // Now send 'status' instead of 'action' to match the backend's DTO
+        body: JSON.stringify({ device: formattedDevice, status: request.status }),
       });
       return response.ok;
     } catch (error) {
@@ -97,7 +102,6 @@ class ApiService {
       
       const data: ActuatorStatusData = await response.json();
 
-      
       if (data && typeof data.device === 'string' && (typeof data.status === 'string' || data.status === null)) {
         return data;
       }
