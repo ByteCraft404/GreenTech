@@ -11,6 +11,7 @@ interface Alert {
   acknowledged: boolean;
 }
 
+
 interface AlertsPanelProps {
   alerts: Alert[];
   onAcknowledge: (alertId: string) => Promise<void>;
