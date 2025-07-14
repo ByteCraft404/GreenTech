@@ -293,3 +293,6 @@ export const DeviceControlCard: React.FC<DeviceControlCardProps> = ({
     </motion.div>
   );
 };
+
+
+

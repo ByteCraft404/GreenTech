@@ -16,11 +16,12 @@ export interface ActuatorStatusData {
 }
 
 // This interface now matches what the Spring Boot backend expects
-// for the @RequestBody in the control endpoint.
+// for the @RequestBody in the control endpoint, including updatedAt.
 export interface ActuatorControlRequest {
   device: string;
   // Renamed from 'action' to 'status' to align with the backend's DTO
   status: 'on' | 'off';
+  updatedAt?: string; // Added this field to match backend's expectation
 }
 
 class ApiService {
@@ -70,16 +71,26 @@ class ApiService {
     }
   }
 
-  // The 'request' parameter now uses the updated ActuatorControlRequest interface
+  // --- START OF UPDATED controlActuator METHOD ---
   async controlActuator(request: ActuatorControlRequest): Promise<boolean> {
     try {
       // Ensure 'device' is capitalized as per backend expectation (e.g., "Fan", "Pump", "Light")
       const formattedDevice = request.device.charAt(0).toUpperCase() + request.device.slice(1);
 
+      // Generate current timestamp in ISO 8601 format (e.g., "2025-07-14T10:33:51")
+      // We slice it to get the "yyyy-MM-dd'T'HH:mm:ss" format, without milliseconds or Z for UTC.
+      // This matches the format provided in your example: "2025-07-11T09:23:35"
+      const now = new Date();
+      const formattedUpdatedAt = now.toISOString().slice(0, 19); 
+
       const response = await this.fetchWithTimeout(`${BASE_URL}/api/actuators/control`, {
         method: 'POST',
-        // Now send 'status' instead of 'action' to match the backend's DTO
-        body: JSON.stringify({ device: formattedDevice, status: request.status }),
+        // Now sending 'device', 'status', AND 'updatedAt'
+        body: JSON.stringify({
+          device: formattedDevice,
+          status: request.status,
+          updatedAt: formattedUpdatedAt // This is the crucial addition
+        }),
       });
       return response.ok;
     } catch (error) {
@@ -87,6 +98,7 @@ class ApiService {
       return false;
     }
   }
+  // --- END OF UPDATED controlActuator METHOD ---
 
   async getActuatorStatus(device: string): Promise<ActuatorStatusData | null> {
     try {
